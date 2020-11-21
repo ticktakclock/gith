@@ -10,6 +10,10 @@ import (
 
 type Branch []string
 
+func isRemoteBranch(branch string) bool {
+	return strings.HasPrefix(string(branch), "remotes/")
+}
+
 func main() {
 	branches := GitBranch()
 	if len(branches) <= 0 {
@@ -22,8 +26,23 @@ func main() {
 		return
 	}
 
+	if selected == "" {
+		fmt.Println("Nothing to do.")
+		return
+	}
+
 	fmt.Printf("Try to checkout branch: %q\n", selected)
-	GitCheckout(selected)
+	if isRemoteBranch(selected) {
+		var branch Branch = []string{strings.TrimPrefix(selected, "remotes/origin/")}
+		checkoutBranchName, err := branch.SelectOneWithAdd()
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		GitCheckoutWithRemote(checkoutBranchName, selected)
+	} else {
+		GitCheckout(selected)
+	}
 }
 
 func (this Branch) Trim() Branch {
@@ -43,7 +62,7 @@ func (branches Branch) SelectOne() (string, error) {
 		return strings.Contains(name, input)
 	}
 	prompt := promptui.Select{
-		Label:    "Select Day",
+		Label:    "Which branch do you want to checkout?",
 		Items:    branches,
 		Searcher: searcher,
 	}
@@ -58,6 +77,33 @@ func (branches Branch) SelectOne() (string, error) {
 	return result, nil
 }
 
+func (branches Branch) SelectOneWithAdd() (string, error) {
+	index := -1
+	var result string
+	var err error
+
+	for index < 0 {
+		prompt := promptui.SelectWithAdd{
+			Label:    "What is a name of branch?",
+			Items:    branches,
+			AddLabel: "Other",
+		}
+
+		index, result, err = prompt.Run()
+
+		if index == -1 {
+			branches = append(branches, result)
+		}
+	}
+	if err != nil {
+		fmt.Printf("Prompt failed %v\n", err)
+		return "", err
+	}
+
+	fmt.Printf("You choose %s\n", result)
+	return result, nil
+}
+
 func GitCheckout(branchName string) {
 	out, err := exec.Command("git", "checkout", branchName).Output()
 	if err != nil {
@@ -67,8 +113,17 @@ func GitCheckout(branchName string) {
 	fmt.Println(string(out))
 }
 
+func GitCheckoutWithRemote(branchName string, remoteBranchName string) {
+	out, err := exec.Command("git", "checkout", "-b", branchName, remoteBranchName).Output()
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(string(out))
+}
+
 func GitBranch() Branch {
-	out, err := exec.Command("git", "branch").Output()
+	out, err := exec.Command("git", "branch", "-a").Output()
 
 	if err != nil {
 		fmt.Println(err)
